@@ -1,0 +1,6 @@
+{
+  "name": "Metal Cutting Simulation",
+  "description": "A 3D interactive simulation for mechanical engineering students to learn lathe tool geometry and cutting principles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

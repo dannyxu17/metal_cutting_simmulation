@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>机械制造基础：切削加工原理交互仿真</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; color: white; font-family: 'Inter', -apple-system, sans-serif; }
+        canvas { display: block; }
+        .glass { background: rgba(15, 16, 20, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        input[type=range] { accent-color: #3b82f6; height: 4px; border-radius: 2px; appearance: none; background: #2a2a2a; }
+        input[type=range]::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; background: #3b82f6; border-radius: 50%; cursor: pointer; }
+        .step-active { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.4); color: white; }
+        .nav-btn { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body>
+    <div id="ui-root" class="fixed inset-0 pointer-events-none z-10 flex flex-col">
+        <!-- Top Header -->
+        <header class="h-16 glass border-b border-white/5 flex items-center justify-between px-8 pointer-events-auto">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-xl shadow-lg shadow-blue-600/20">M</div>
+                <div>
+                    <h1 class="text-sm font-bold tracking-tight">机械制造基础：切削加工原理</h1>
+                    <div class="flex gap-1 mt-1" id="progress-dots">
+                        <div class="h-1 w-6 bg-blue-500 rounded-full transition-all"></div>
+                        <div class="h-1 w-2 bg-gray-800 rounded-full transition-all"></div>
+                        <div class="h-1 w-2 bg-gray-800 rounded-full transition-all"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="text-right hidden sm:block">
+                <div class="text-[10px] text-gray-500 uppercase font-bold tracking-widest">学习模式</div>
+                <div class="text-xs font-medium text-gray-300">交互式三维仿真</div>
+            </div>
+        </header>
+
+        <div class="flex-1 flex overflow-hidden">
+            <!-- Left: Navigation -->
+            <div class="w-64 h-full glass border-r pointer-events-auto flex flex-col p-6 overflow-y-auto">
+                <div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-8 italic">Learning Progress</div>
+                <div class="space-y-4" id="nav-list">
+                    <button onclick="setStep(1)" class="nav-btn w-full text-left p-4 rounded-xl border border-transparent step-active" id="btn-step-1">
+                        <div class="text-[8px] uppercase font-bold text-blue-400 mb-1">Step 01</div>
+                        <div class="text-sm font-bold">刀具角度可视化</div>
+                    </button>
+                    <button onclick="setStep(2)" class="nav-btn w-full text-left p-4 rounded-xl border border-transparent text-gray-500" id="btn-step-2">
+                        <div class="text-[8px] uppercase font-bold mb-1">Step 02</div>
+                        <div class="text-sm font-bold">切削三要素调节</div>
+                    </button>
+                    <button onclick="setStep(3)" class="nav-btn w-full text-left p-4 rounded-xl border border-transparent text-gray-500" id="btn-step-3">
+                        <div class="text-[8px] uppercase font-bold mb-1">Step 03</div>
+                        <div class="text-sm font-bold">原理动画与自测</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Center: Interactive View -->
+            <div class="flex-1 relative">
+                <!-- Guidance Bar -->
+                <div class="absolute top-6 left-1/2 -translate-x-1/2 w-full max-w-xl px-4">
+                    <div class="glass p-4 rounded-2xl border border-blue-500/30 flex items-center justify-between shadow-2xl">
+                        <div class="flex items-center gap-3">
+                            <div class="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-[10px] font-bold">!</div>
+                            <span id="task-text" class="text-sm font-medium text-blue-100">调节前角与后角，观察楔角变化</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scene Overlays -->
+                <div class="absolute bottom-8 left-8 right-8 flex justify-between items-end pointer-events-none">
+                    <!-- Toggle Plane -->
+                    <button id="btn-planes" class="pointer-events-auto p-4 rounded-2xl glass border-white/10 hover:bg-white/5 transition-all flex flex-col items-center gap-2 group">
+                        <div id="plane-icon" class="text-gray-400 group-hover:text-blue-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </div>
+                        <span class="text-[8px] uppercase font-bold text-gray-500 tracking-wider">辅助符号</span>
+                    </button>
+
+                    <!-- Control Panel Center -->
+                    <div class="pointer-events-auto w-full max-w-md mx-6">
+                        <!-- Panel 1 -->
+                        <div id="panel-1" class="glass p-6 rounded-3xl space-y-5 shadow-2xl border-white/10">
+                            <div class="space-y-2">
+                                <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500">前角 γo: <span id="val-rake" class="text-blue-400">15</span>°</div>
+                                <input type="range" id="input-rake" min="-10" max="25" value="15" class="w-full">
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500">后角 αo: <span id="val-relief" class="text-magenta-400" style="color:#ff00ff">8</span>°</div>
+                                <input type="range" id="input-relief" min="2" max="15" value="8" class="w-full">
+                            </div>
+                            <div class="flex justify-between text-[10px] font-mono text-gray-600 border-t border-white/5 pt-4">
+                                <span class="italic">αo + βo + γo = 90</span>
+                                <span class="text-blue-400 font-bold bg-blue-400/10 px-2 py-1 rounded">楔角 βo = <span id="val-wedge">67</span>°</span>
+                            </div>
+                        </div>
+
+                        <!-- Panel 2 -->
+                        <div id="panel-2" class="glass p-6 rounded-3xl space-y-5 hidden shadow-2xl border-white/10">
+                            <div class="space-y-2">
+                                <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 font-mono">速度 vc: <span id="val-speed" class="text-orange-400">120</span> <span class="text-gray-700 italic">m/min</span></div>
+                                <input type="range" id="input-speed" min="60" max="240" value="120" class="w-full">
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 font-mono">进给 f: <span id="val-feed" class="text-orange-400">0.20</span> <span class="text-gray-700 italic">mm/r</span></div>
+                                <input type="range" id="input-feed" min="0.1" max="0.4" step="0.01" value="0.2" class="w-full">
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex justify-between text-[10px] uppercase font-bold text-gray-500 font-mono">背吃 ap: <span id="val-ap" class="text-orange-400">1.0</span> <span class="text-gray-700 italic">mm</span></div>
+                                <input type="range" id="input-ap" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full">
+                            </div>
+                            <button id="btn-cut" class="w-full py-4 bg-orange-600 text-white rounded-xl font-bold hover:bg-orange-500 transition-all shadow-xl shadow-orange-600/20 active:scale-95">开始切削</button>
+                        </div>
+
+                        <!-- Panel 3 -->
+                        <div id="panel-3" class="glass p-6 rounded-3xl hidden shadow-2xl border-white/10">
+                            <div id="quiz-content" class="space-y-4">
+                                <div class="text-[10px] font-bold text-gray-500 uppercase italic">Quiz Self-Check</div>
+                                <div class="text-sm font-bold text-gray-200">哪一个角度的大小直接影响切削刃的强度和散热条件？</div>
+                                <div class="space-y-2">
+                                    <button onclick="answer(0)" class="w-full text-left p-3 rounded-xl bg-white/5 border border-white/5 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all text-xs text-gray-300">A. 前角 γo</button>
+                                    <button onclick="answer(1)" class="w-full text-left p-3 rounded-xl bg-white/5 border border-white/5 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all text-xs text-gray-300">B. 后角 αo</button>
+                                    <button onclick="answer(2)" class="w-full text-left p-3 rounded-xl bg-white/5 border border-white/5 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all text-xs text-gray-300">C. 楔角 βo</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Next Step Button -->
+                    <button id="btn-next" onclick="handleNext()" class="pointer-events-auto p-4 px-8 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold flex items-center gap-2 shadow-xl shadow-blue-600/20 transition-all border border-blue-400/50 active:scale-95">
+                        下一步
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right: Knowledge Info -->
+            <div class="w-80 h-full glass border-l pointer-events-auto p-6 flex flex-col space-y-6 overflow-y-auto">
+                <div class="flex items-center gap-2 text-blue-400">
+                    <div class="w-1 h-4 bg-blue-500 rounded-full"></div>
+                    <span class="text-[10px] font-bold uppercase tracking-widest italic font-mono">Knowledge Card</span>
+                </div>
+                <div id="knowledge-text" class="space-y-4">
+                    <h3 class="text-white text-lg font-bold tracking-tight">刀具几何角度</h3>
+                    <p class="text-gray-400 text-xs leading-relaxed">材料去除主要通过刀具刃口的挤压。几何角度定义在正交平面内：</p>
+                    <ul class="text-[10px] text-gray-500 space-y-2">
+                        <li>• <span class="text-blue-400 font-bold">前角 γo</span>：影响切屑排出的难易。</li>
+                        <li>• <span class="text-magenta-400 font-bold" style="color:#ff00ff">后角 αo</span>：减少后刀面与工件摩擦。</li>
+                        <li>• <span class="text-orange-400 font-bold">楔角 βo</span>：直接决定了刃口强度。</li>
+                    </ul>
+                    <div class="p-4 bg-blue-600/10 rounded-2xl text-[10px] text-blue-300 font-mono tracking-widest leading-loose border border-blue-500/20">
+                        RELATION:<br/>
+                        αo + βo + γo = 90°
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3D Scene Container -->
+    <div id="canvas-container" class="fixed inset-0"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- State ---
+        let state = {
+            currentStep: 1,
+            angles: { rake: 15, relief: 8, wedge: 67 },
+            params: { speed: 120, feed: 0.2, ap: 1.0 },
+            isCutting: false,
+            showPlanes: false,
+            toolZ: -2.2
+        };
+
+        // --- UI Logic ---
+        window.setStep = (step) => {
+            state.currentStep = step;
+            // Update Nav
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('step-active', 'text-white'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.add('text-gray-500'));
+            document.getElementById(`btn-step-${step}`).classList.add('step-active', 'text-white');
+            document.getElementById(`btn-step-${step}`).classList.remove('text-gray-500');
+
+            // Update Progress Dots
+            const dots = document.getElementById('progress-dots').children;
+            for(let i=0; i<3; i++) {
+                dots[i].className = (i+1 <= step) ? "h-1 w-6 bg-blue-500 rounded-full transition-all" : "h-1 w-2 bg-gray-800 rounded-full transition-all";
+            }
+
+            // Update Panels
+            document.getElementById('panel-1').classList.toggle('hidden', step !== 1);
+            document.getElementById('panel-2').classList.toggle('hidden', step !== 2);
+            document.getElementById('panel-3').classList.toggle('hidden', step !== 3);
+
+            // Update Text
+            const tasks = [
+                "调节前角与后角，观察楔角变化",
+                "调节切削速度、进给量与背吃刀量",
+                "观察切屑形成过程并完成自测"
+            ];
+            document.getElementById('task-text').innerText = tasks[step-1];
+            
+            const kTexts = [
+                ` <h3 class="text-white text-lg font-bold tracking-tight">刀具几何角度</h3><p class="text-gray-400 text-xs leading-relaxed">几何角度决定了切削过程的受力与热量分布。前角增大，切削轻快但动力不足。</p><div class="p-4 bg-blue-600/10 rounded-2xl text-[10px] text-blue-300 font-mono leading-loose border border-blue-500/20 italic">αo + βo + γo = 90°</div>`,
+                ` <h3 class="text-white text-lg font-bold tracking-tight">切削三要素 (vc, f, ap)</h3><p class="text-gray-400 text-xs leading-relaxed">这是加工工艺中最核心的三个变量：控制生产率、成本和加工质量。</p><div class="space-y-2 mt-4"><div class="text-[10px] text-orange-400 p-2 bg-orange-400/5 rounded border border-orange-400/10">vc: 表面切削速度</div><div class="text-[10px] text-orange-400 p-2 bg-orange-400/5 rounded border border-orange-400/10">f: 每转进给位移</div></div>`,
+                ` <h3 class="text-white text-lg font-bold tracking-tight">切屑形成动画</h3><p class="text-gray-400 text-xs leading-relaxed">观察金属材料在第一变形区的剪切滑移。螺旋状切屑预示着良好的断屑与排屑状态。</p>`
+            ];
+            document.getElementById('knowledge-text').innerHTML = kTexts[step-1];
+
+            // Auto show symbols on step 1
+            state.showPlanes = (step === 1);
+            updatePlaneVisibility();
+        };
+
+        window.handleNext = () => {
+            if (state.currentStep < 3) {
+                setStep(state.currentStep + 1);
+            } else {
+                alert("已完成所有学习步骤！");
+            }
+        };
+
+        const btnPlanes = document.getElementById('btn-planes');
+        btnPlanes.addEventListener('click', () => {
+            state.showPlanes = !state.showPlanes;
+            updatePlaneVisibility();
+        });
+
+        function updatePlaneVisibility() {
+            const icon = document.getElementById('plane-icon');
+            icon.classList.toggle('text-blue-500', state.showPlanes);
+            icon.classList.toggle('text-gray-400', !state.showPlanes);
+            if(window.planeGroup) window.planeGroup.visible = state.showPlanes;
+        }
+
+        document.getElementById('input-rake').addEventListener('input', (e) => {
+            state.angles.rake = parseInt(e.target.value);
+            updateAngles();
+        });
+        document.getElementById('input-relief').addEventListener('input', (e) => {
+            state.angles.relief = parseInt(e.target.value);
+            updateAngles();
+        });
+        function updateAngles() {
+            state.angles.wedge = 90 - state.angles.rake - state.angles.relief;
+            document.getElementById('val-rake').innerText = state.angles.rake;
+            document.getElementById('val-relief').innerText = state.angles.relief;
+            document.getElementById('val-wedge').innerText = state.angles.wedge;
+            updateToolMesh();
+        }
+
+        document.getElementById('input-speed').addEventListener('input', (e) => {
+            state.params.speed = parseInt(e.target.value);
+            document.getElementById('val-speed').innerText = state.params.speed;
+        });
+        document.getElementById('input-feed').addEventListener('input', (e) => {
+            state.params.feed = parseFloat(e.target.value);
+            document.getElementById('val-feed').innerText = state.params.feed.toFixed(2);
+        });
+        document.getElementById('input-ap').addEventListener('input', (e) => {
+            state.params.ap = parseFloat(e.target.value);
+            document.getElementById('val-ap').innerText = state.params.ap.toFixed(1);
+        });
+
+        document.getElementById('btn-cut').addEventListener('click', () => {
+            state.isCutting = !state.isCutting;
+            document.getElementById('btn-cut').innerHTML = state.isCutting ? "停止模拟" : "开始切削";
+            document.getElementById('btn-cut').className = state.isCutting ? "w-full py-4 bg-red-600/20 text-red-500 border border-red-500/50 rounded-xl font-bold" : "w-full py-4 bg-orange-600 text-white rounded-xl font-bold shadow-xl shadow-orange-600/20 hover:bg-orange-500 transition-all";
+        });
+
+        window.answer = (idx) => {
+            const quiz = document.getElementById('quiz-content');
+            if (idx === 2) {
+                quiz.innerHTML = `<div class="text-center space-y-4 py-4 animate-in fade-in zoom-in duration-500"><div class="text-green-500 font-bold text-lg">回答正确！</div><p class="text-xs text-gray-400">楔角 βo 是决定切削部分强度的主要角度。后角、前角越大，楔角越小，切削刃越锋利但散热越差。</p><button onclick="location.reload()" class="bg-blue-600 px-6 py-2 rounded-xl text-xs font-bold shadow-lg shadow-blue-600/20">重新开始</button></div>`;
+            } else {
+                alert("回答错误：请观察此时的楔角，感受一下如果它非常小，刀头是不是更容易崩碎？");
+            }
+        };
+
+        // --- Three.js Implementation ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050505);
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(5, 3, 5);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.localClippingEnabled = true;
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.minDistance = 2;
+        controls.maxDistance = 12;
+
+        // Pro Lighting Setup
+        const amb = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(amb);
+
+        const mainLight = new THREE.DirectionalLight(0xffffff, 2.5);
+        mainLight.position.set(5, 10, 7.5);
+        scene.add(mainLight);
+
+        const fillLight = new THREE.SpotLight(0x3b82f6, 50);
+        fillLight.position.set(-10, 5, 0);
+        scene.add(fillLight);
+
+        const rimLight = new THREE.PointLight(0xffffff, 80);
+        rimLight.position.set(0, 5, -10);
+        scene.add(rimLight);
+
+        // Grid
+        const grid = new THREE.GridHelper(40, 40, 0x1a1a1a, 0x111111);
+        scene.add(grid);
+
+        // --- Workpiece ---
+        const planeRaw = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const planeCut = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
+
+        const wpGroup = new THREE.Group();
+        const rawMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.9, roughness: 0.3, clippingPlanes: [planeRaw] });
+        const cutMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 1, roughness: 0.15, clippingPlanes: [planeCut] });
+
+        const rawGeo = new THREE.CylinderGeometry(0.5, 0.5, 4, 128);
+        const meshRaw = new THREE.Mesh(rawGeo, rawMat);
+        meshRaw.rotation.x = Math.PI / 2;
+        wpGroup.add(meshRaw);
+
+        const cutGeo = new THREE.CylinderGeometry(0.4, 0.4, 4, 128);
+        const meshCut = new THREE.Mesh(cutGeo, cutMat);
+        meshCut.rotation.x = Math.PI / 2;
+        wpGroup.add(meshCut);
+        scene.add(wpGroup);
+
+        // --- Tool ---
+        const toolGroup = new THREE.Group();
+        const shank = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }));
+        shank.position.set(0.6, 0, 0);
+        toolGroup.add(shank);
+
+        const toolHeadOuter = new THREE.Group();
+        const toolHeadInner = new THREE.Group();
+        const tipMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.16, 0.16), new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 1.0, roughness: 0.1 }));
+        tipMesh.position.set(-0.1, 0, 0);
+        toolHeadInner.add(tipMesh);
+        
+        const edge = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.18, 0.015), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
+        edge.position.set(-0.1, 0, 0.075);
+        toolHeadInner.add(edge);
+
+        // Text Sprite Helper
+        function createSprite(text, color) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color;
+            ctx.font = 'bold 80px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(text, 128, 80);
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(0.6, 0.3, 1);
+            return sprite;
+        }
+
+        const planeGroup = new THREE.Group();
+        const rakeHigh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.15), new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
+        rakeHigh.rotation.x = Math.PI/2;
+        rakeHigh.position.set(-0.1, 0.081, 0);
+        const reliefHigh = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 0.15), new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
+        reliefHigh.rotation.y = Math.PI/2;
+        reliefHigh.position.set(-0.01, 0, 0);
+
+        const labelRake = createSprite('γo', 'yellow');
+        labelRake.position.set(0.1, 0.25, 0);
+        const labelRelief = createSprite('αo', 'magenta');
+        labelRelief.position.set(-0.25, -0.2, 0.1);
+        const labelWedge = createSprite('βo', 'orange');
+        labelWedge.position.set(-0.1, -0.05, 0.2);
+
+        planeGroup.add(rakeHigh, reliefHigh, labelRake, labelRelief, labelWedge);
+        planeGroup.visible = false;
+        window.planeGroup = planeGroup;
+        toolHeadInner.add(planeGroup);
+
+        toolHeadOuter.add(toolHeadInner);
+        toolHeadOuter.rotation.y = -Math.PI / 4; 
+        toolGroup.add(toolHeadOuter);
+        scene.add(toolGroup);
+
+        window.updateToolMesh = () => {
+            const rakeRad = (state.angles.rake * Math.PI) / 180;
+            const reliefRad = (state.angles.relief * Math.PI) / 180;
+            toolHeadInner.rotation.set(reliefRad, 0, -rakeRad);
+            
+            const visualDepth = state.params.ap * 0.05;
+            const toolTipX = 0.5 - visualDepth;
+            toolGroup.position.x = toolTipX + 0.1;
+            
+            meshCut.geometry.dispose();
+            meshCut.geometry = new THREE.CylinderGeometry(0.5 - visualDepth, 0.5 - visualDepth, 4, 128);
+        };
+
+        // --- Spiral Chips ---
+        const chipCount = 5;
+        const spiralPoints = [];
+        const radius = 0.05;
+        const turns = 6;
+        const height = 0.4;
+        for (let i = 0; i <= 60; i++) {
+            const t = i / 60;
+            const angle = t * Math.PI * 2 * turns;
+            spiralPoints.push(new THREE.Vector3(Math.cos(angle) * radius, t * height, Math.sin(angle) * radius));
+        }
+        const chipCurve = new THREE.CatmullRomCurve3(spiralPoints);
+        const chipGeo = new THREE.TubeGeometry(chipCurve, 48, 0.008, 8, false);
+        const chipMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 1, roughness: 0.1 });
+        const chips = new THREE.InstancedMesh(chipGeo, chipMat, chipCount);
+        const chipData = Array.from({ length: chipCount }, () => ({
+            pos: new THREE.Vector3(),
+            vel: new THREE.Vector3(),
+            rot: new THREE.Euler(),
+            life: Math.random()
+        }));
+        scene.add(chips);
+
+        // --- App Loop ---
+        const dummy = new THREE.Object3D();
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            
+            if (state.isCutting) {
+                state.toolZ += state.params.feed * delta * 2.0;
+                if (state.toolZ > 2.2) state.toolZ = -2.2;
+                wpGroup.children.forEach(m => m.rotation.y += state.params.speed * 0.015);
+            }
+            
+            toolGroup.position.z = state.toolZ;
+            planeRaw.constant = -state.toolZ;
+            planeCut.constant = state.toolZ;
+
+            // Chip simulation
+            chipData.forEach((p, i) => {
+                if (state.isCutting) {
+                    p.life -= delta * (0.6 + state.params.speed * 0.002);
+                    if (p.life <= 0) {
+                        p.life = 1.0;
+                        const toolTipX = 0.5 - (state.params.ap * 0.05);
+                        p.pos.set(toolTipX, 0, state.toolZ);
+                        p.vel.set(0.4 + Math.random() * 0.4, 0.8 + Math.random() * 0.5, -(state.params.feed * 8))
+                             .multiplyScalar(0.6 + state.params.speed * 0.004);
+                        p.rot.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+                    }
+                    p.pos.add(p.vel.clone().multiplyScalar(delta));
+                    p.rot.x += delta * 2;
+                    p.rot.y += delta * 3;
+                    p.vel.y -= delta * 1.8; // Gravity
+                    p.vel.x -= delta * 0.5; // Resists
+                } else {
+                    p.life = 0;
+                }
+                dummy.position.copy(p.pos);
+                dummy.rotation.copy(p.rot);
+                dummy.scale.setScalar(p.life > 0 ? 1 : 0);
+                dummy.updateMatrix();
+                chips.setMatrixAt(i, dummy.matrix);
+            });
+            chips.instanceMatrix.needsUpdate = true;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        updateAngles();
+        animate();
+    </script>
+</body>
+</html>
