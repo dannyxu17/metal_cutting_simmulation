@@ -45,7 +45,7 @@ export const SimulationScene: React.FC<SimulationSceneProps> = ({ angles, params
           cellColor="#222"
         />
         
-        <Environment preset="city" />
+        <Environment files="potsdamer_platz_1k.hdr" path="/hdri/" />
       </Canvas>
     </div>
   );
